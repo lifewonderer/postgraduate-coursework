@@ -1,5 +1,5 @@
-# Postgraduate Projects 
-The courseworks of modules in MISCADA.
+# Postgraduate Courseworks 
+The courseworks and projects of modules in MISCADA.
 
 ## Module List
 

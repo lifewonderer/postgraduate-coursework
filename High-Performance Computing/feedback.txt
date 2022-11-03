@@ -1,0 +1,69 @@
+* Code compiles without warnings, and exhibits no memory leaks [5/5]
+
+Both OpenMP and MPI implementations compile warning free and exhibit
+no memory errors/leaks at runtime.
+
+* OpenMP parallelisation of Gauss Seidel [13/15]
+
+A correct parallel implementation using red-black chess-board
+colouring with no data races.
+
+A minor improvement would be to open a single parallel region outside
+the loop over iterations and use `#pragma omp single' to avoid data
+races in the convergence monitor. This would have marginally improved
+performance because you only have to start the thread pool once.
+
+OpenMP code exhibits speedup when running with more threads.
+
+* MPI implementation of tree_allreduce [18/20]
+
+A correct implementation for power-of-two process counts using
+halving. Generally nicely formatted and easy to read.
+
+One minor quibble, it is better to switch on the op outside of the
+loop over count, rather than inside. Switching outside will produce
+better code since the compiler can do a better job on the loop body.
+
+* Part 1 report [8/10]
+
+A clear description of the problem, and solution using red-black
+colouring. I like the figures showing the dependencies between points
+in the grid. You could have commented here on whether the parallel
+safe ordering would be expected to give the same results as a serial
+run of the serial ordering.
+
+The description of the algorithm with pseudo-code is also well done. A
+minor point to note here, the input is not a matrix (it is tempting to
+think of it as such, since it is 2D, but the Gauss-Seidel iteration is
+representing the action of a matrix that has NX*NY rows and NX*NY
+columns).
+
+* Part 2 report [35/50]
+
+A good report with a clear explanation of the different algorithms
+used, I like the use of the floating Algorithm boxes to explain, along with
+the text, exactly how things work. The figures for tree reductions and
+the builtin butterfly reduction algorithm for MPI are nice (you could
+have cited a source for the statement that the structure of the MPI
+implementation is a "butterfly" pattern).
+
+Then benchmarking setup is well described with results shown in both
+tables and plots (with an appropriate choice of digits of accuracy in
+the tables). The comparison to models is a bit weaker. Although you
+cover the shape of the different algorithms (linear vs logarithmic),
+since we are running on a single machine, you could have measured the
+two free parameters alpha and beta and then compared the predicted
+time with the data quantitatively. Similarly, I like that you make a
+prediction about the performance of the tree reduction vs. builtin
+MPI_Allreduce. However, the actually data suggest the MPI
+implementation is about 10x faster, rather than only 2x, which you do
+not really comment on.
+
+In the plots, could you have used logarithmic scales to show the
+data more clearly?
+
+The conclusions suffer a little bit from being only qualitative. You
+comment on the main differences, but could you have made quantitative
+statements here, related to the models?
+
+TOTAL: [79/100]

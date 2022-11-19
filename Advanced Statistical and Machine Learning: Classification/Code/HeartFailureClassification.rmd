@@ -1,0 +1,525 @@
+---
+title: "Classification Summative Coursework"
+author: "bgtt65"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+# Data Exploration
+
+Load the heart failure data, take a look the head and check for null values. It 
+can be observed that there are some variables are in binary. We then convert 
+numeric to factor.  
+
+```{r}
+heart.failure <- readr::read_csv("heart_failure.csv")
+#View(heart.failure)
+head(heart.failure)
+is.null(heart.failure)
+
+heart.failure$anaemia <- as.factor(heart.failure$anaemia)
+heart.failure$diabetes <- as.factor(heart.failure$diabetes)
+heart.failure$high_blood_pressure <- as.factor(heart.failure$high_blood_pressure)
+heart.failure$sex <- as.factor(heart.failure$sex)
+heart.failure$smoking <- as.factor(heart.failure$smoking)
+heart.failure$fatal_mi <- as.factor(heart.failure$fatal_mi)
+```
+
+Have a look at the summary of the data. Then we briefly understand the counts of
+factor variables and the distribution of numeric variables.
+
+```{r}
+skimr::skim(heart.failure)
+```
+
+As we want to predict whether the patient suffered a fatal myocardial infarction 
+during the follow-up period. We plot a pie chart of the target variable.
+
+```{r}
+library("dplyr")
+library("ggplot2")
+
+fatal_mi.table <- as.data.frame(table(heart.failure$fatal_mi))
+prop1 = round(fatal_mi.table[1,2] / sum(fatal_mi.table[,2]) * 100, 1)
+prop2 = round(fatal_mi.table[2,2] / sum(fatal_mi.table[,2]) * 100, 1)
+fatal_mi.data <- data.frame(
+  HeartFailure = c("Yes", "No"),
+  prop = c(prop1, prop2),
+  plabel = paste(as.character(c(prop1, prop2)),"%")
+)
+
+fatal_mi.data <- fatal_mi.data %>%
+  arrange(desc(HeartFailure)) %>%
+  mutate(lab.ypos = cumsum(prop) - 0.5*prop)
+
+ggplot(fatal_mi.data, aes(x = 2, y = prop, fill = HeartFailure)) +
+  geom_bar(stat = "identity", color = "white") +
+  coord_polar(theta = "y", start = 0) +
+  geom_text(aes(y = lab.ypos, label = plabel), color = "white") +
+  scale_fill_manual(values = hcl.colors(dim(fatal_mi.data)[1], "Fall")) +
+  theme_void() +
+  ggtitle("Patient Status") +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+```
+
+Show the relationship between target variable and sex.
+
+```{r}
+fatal_mi.table <- as.data.frame(table(heart.failure$fatal_mi, heart.failure$sex))
+prop1 = round(fatal_mi.table[1,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop2 = round(fatal_mi.table[2,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop3 = round(fatal_mi.table[3,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop4 = round(fatal_mi.table[4,3] / sum(fatal_mi.table[,3]) * 100, 1)
+fatal_mi.data <- data.frame(
+  HeartFailure = c("Yes (Female)", "No (Female)", "Yes (Male)", "No (Male)"),
+  prop = c(prop1, prop2, prop3, prop4),
+  plabel = paste(as.character(c(prop1, prop2, prop3, prop4)),"%")
+)
+
+fatal_mi.data <- fatal_mi.data %>%
+  arrange(desc(HeartFailure)) %>%
+  mutate(lab.ypos = cumsum(prop) - 0.5*prop)
+
+ggplot(fatal_mi.data, aes(x = 2, y = prop, fill = HeartFailure)) +
+  geom_bar(stat = "identity", color = "white") +
+  coord_polar(theta = "y", start = 0) +
+  geom_text(aes(y = lab.ypos, label = plabel), color = "white") +
+  scale_fill_manual(values = hcl.colors(dim(fatal_mi.data)[1], "Fall")) +
+  theme_void() +
+  ggtitle("Patient Status (Sex)") +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+```
+
+Show the relationship between target variable and anaemia.
+
+```{r}
+fatal_mi.table <- as.data.frame(table(heart.failure$fatal_mi, heart.failure$anaemia))
+prop1 = round(fatal_mi.table[1,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop2 = round(fatal_mi.table[2,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop3 = round(fatal_mi.table[3,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop4 = round(fatal_mi.table[4,3] / sum(fatal_mi.table[,3]) * 100, 1)
+fatal_mi.data <- data.frame(
+  HeartFailure = c("Yes (Not Anaemia)", "No (Not Anaemia)", "Yes (Anaemia)", "No (Anaemia)"),
+  prop = c(prop1, prop2, prop3, prop4),
+  plabel = paste(as.character(c(prop1, prop2, prop3, prop4)),"%")
+)
+
+fatal_mi.data <- fatal_mi.data %>%
+  arrange(desc(HeartFailure)) %>%
+  mutate(lab.ypos = cumsum(prop) - 0.5*prop)
+
+ggplot(fatal_mi.data, aes(x = 2, y = prop, fill = HeartFailure)) +
+  geom_bar(stat = "identity", color = "white") +
+  coord_polar(theta = "y", start = 0) +
+  geom_text(aes(y = lab.ypos, label = plabel), color = "white") +
+  scale_fill_manual(values = hcl.colors(dim(fatal_mi.data)[1], "Fall")) +
+  theme_void() +
+  ggtitle("Patient Status (Anaemia)") +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+```
+
+Show the relationship between target variable and diabetes.
+
+```{r}
+fatal_mi.table <- as.data.frame(table(heart.failure$fatal_mi, heart.failure$diabetes))
+prop1 = round(fatal_mi.table[1,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop2 = round(fatal_mi.table[2,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop3 = round(fatal_mi.table[3,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop4 = round(fatal_mi.table[4,3] / sum(fatal_mi.table[,3]) * 100, 1)
+fatal_mi.data <- data.frame(
+  HeartFailure = c("Yes (Not Diabetes)", "No (Not Diabetes)", "Yes (Diabetes)", "No (Diabetes)"),
+  prop = c(prop1, prop2, prop3, prop4),
+  plabel = paste(as.character(c(prop1, prop2, prop3, prop4)),"%")
+)
+
+fatal_mi.data <- fatal_mi.data %>%
+  arrange(desc(HeartFailure)) %>%
+  mutate(lab.ypos = cumsum(prop) - 0.5*prop)
+
+ggplot(fatal_mi.data, aes(x = 2, y = prop, fill = HeartFailure)) +
+  geom_bar(stat = "identity", color = "white") +
+  coord_polar(theta = "y", start = 0) +
+  geom_text(aes(y = lab.ypos, label = plabel), color = "white") +
+  scale_fill_manual(values = hcl.colors(dim(fatal_mi.data)[1], "Fall")) +
+  theme_void() +
+  ggtitle("Patient Status (Diabetes)") +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+```
+
+Show the relationship between target variable and high blood pressure.
+
+```{r}
+fatal_mi.table <- as.data.frame(table(heart.failure$fatal_mi, heart.failure$high_blood_pressure))
+prop1 = round(fatal_mi.table[1,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop2 = round(fatal_mi.table[2,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop3 = round(fatal_mi.table[3,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop4 = round(fatal_mi.table[4,3] / sum(fatal_mi.table[,3]) * 100, 1)
+fatal_mi.data <- data.frame(
+  HeartFailure = c("Yes (Not HBP)", "No (Not HBP)", "Yes (HBP)", "No (HBP)"),
+  prop = c(prop1, prop2, prop3, prop4),
+  plabel = paste(as.character(c(prop1, prop2, prop3, prop4)),"%")
+)
+
+fatal_mi.data <- fatal_mi.data %>%
+  arrange(desc(HeartFailure)) %>%
+  mutate(lab.ypos = cumsum(prop) - 0.5*prop)
+
+ggplot(fatal_mi.data, aes(x = 2, y = prop, fill = HeartFailure)) +
+  geom_bar(stat = "identity", color = "white") +
+  coord_polar(theta = "y", start = 0) +
+  geom_text(aes(y = lab.ypos, label = plabel), color = "white") +
+  scale_fill_manual(values = hcl.colors(dim(fatal_mi.data)[1], "Fall")) +
+  theme_void() +
+  ggtitle("Patient Status (High Blood Pressure)") +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+```
+
+Show the relationship between target variable and smoking.
+
+```{r}
+fatal_mi.table <- as.data.frame(table(heart.failure$fatal_mi, heart.failure$smoking))
+prop1 = round(fatal_mi.table[1,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop2 = round(fatal_mi.table[2,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop3 = round(fatal_mi.table[3,3] / sum(fatal_mi.table[,3]) * 100, 1)
+prop4 = round(fatal_mi.table[4,3] / sum(fatal_mi.table[,3]) * 100, 1)
+fatal_mi.data <- data.frame(
+  HeartFailure = c("Yes (Not Smoking)", "No (Not Smoking)", "Yes (Smoking)", "No (Smoking)"),
+  prop = c(prop1, prop2, prop3, prop4),
+  plabel = paste(as.character(c(prop1, prop2, prop3, prop4)),"%")
+)
+
+fatal_mi.data <- fatal_mi.data %>%
+  arrange(desc(HeartFailure)) %>%
+  mutate(lab.ypos = cumsum(prop) - 0.5*prop)
+
+ggplot(fatal_mi.data, aes(x = 2, y = prop, fill = HeartFailure)) +
+  geom_bar(stat = "identity", color = "white") +
+  coord_polar(theta = "y", start = 0) +
+  geom_text(aes(y = lab.ypos, label = plabel), color = "white") +
+  scale_fill_manual(values = hcl.colors(dim(fatal_mi.data)[1], "Fall")) +
+  theme_void() +
+  ggtitle("Patient Status (Smoking)") +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+```
+
+Show the bar charts for factor variables.
+
+```{r}
+library(ggplot2)
+DataExplorer::plot_bar(heart.failure, ncol = 2, ggtheme = theme_linedraw())
+DataExplorer::plot_bar(heart.failure, by = "fatal_mi", ncol = 2, ggtheme = theme_linedraw())
+```
+
+Show the histograms for numeric variables.
+
+```{r}
+DataExplorer::plot_histogram(heart.failure, ncol = 3, ggtheme = theme_linedraw())
+```
+
+Show the Q-Q plots for numeric variables.
+
+```{r}
+DataExplorer::plot_qq(heart.failure, ncol = 3, ggtheme = theme_linedraw())
+DataExplorer::plot_qq(heart.failure, by = "fatal_mi", ncol = 3, ggtheme = theme_linedraw())
+```
+
+Show the box plots for numeric variables.
+
+```{r}
+DataExplorer::plot_boxplot(heart.failure, by = "fatal_mi", ncol = 4, ggtheme = theme_linedraw())
+```
+
+Show the correlation for numeric variables.
+
+```{r}
+DataExplorer::plot_correlation(heart.failure, type = "continuous")
+```
+
+## Model Fitting
+
+Firstly, load `tidyverse`, MLR3 and related tools.
+
+```{r}
+library("tidyverse")
+# data structure used by MLR3
+library("data.table")
+library("mlr3verse")
+```
+
+Make a heart failure task.
+
+```{r}
+set.seed(500) 
+heartfailure_task <- TaskClassif$new(id = "HeartFailure",
+                               backend = heart.failure,
+                               target = "fatal_mi",
+                               positive = "1")
+```
+
+Set several options for good error estimation.
+
+```{r}
+holdout <- rsmp("holdout", ratio = 0.7)
+holdout$instantiate(heartfailure_task)
+
+cv <- rsmp("cv", folds = 5)
+cv$instantiate(heartfailure_task)
+
+bootstrap <- rsmp("bootstrap")
+bootstrap$instantiate(heartfailure_task)
+```
+
+Set several algorithms for model fitting comparison.
+
+```{r}
+lrn_baseline <- lrn("classif.featureless", predict_type = "prob")
+lrn_log_reg <- lrn("classif.log_reg", predict_type = "prob")
+lrn_cart <- lrn("classif.rpart", predict_type = "prob")
+lrn_xgboost <- lrn("classif.xgboost", predict_type = "prob")
+pl_xgb <- po("encode") %>>%
+  po(lrn_xgboost)
+```
+
+Set the measurements for loss function.
+
+```{r}
+measures <- list(msr("classif.ce"),
+                 msr("classif.acc"),
+                 msr("classif.auc"),
+                 msr("classif.fpr"),
+                 msr("classif.fnr"))
+```
+
+Set the benchmarks and show the results of measurements.
+
+```{r}
+library("precrec")
+
+# test/train split
+res <- benchmark(data.table(
+  task       = list(heartfailure_task),
+  learner    = list(lrn_baseline,
+                    lrn_log_reg,
+                    lrn_cart,
+                    pl_xgb),
+  resampling = list(holdout)
+), store_models = TRUE)
+
+res$aggregate(measures)
+autoplot(res)
+autoplot(res$clone(deep = TRUE), type = "roc")
+
+# cross validation
+res <- benchmark(data.table(
+  task       = list(heartfailure_task),
+  learner    = list(lrn_baseline,
+                    lrn_log_reg,
+                    lrn_cart,
+                    pl_xgb),
+  resampling = list(cv)
+), store_models = TRUE)
+
+res$aggregate(measures)
+autoplot(res)
+autoplot(res$clone(deep = TRUE), type = "roc")
+
+# bootstrap
+res <- benchmark(data.table(
+  task       = list(heartfailure_task),
+  learner    = list(lrn_baseline,
+                    lrn_log_reg,
+                    lrn_cart),
+  resampling = list(bootstrap)
+), store_models = TRUE)
+
+res$aggregate(measures)
+autoplot(res)
+autoplot(res$clone(deep = TRUE), type = "roc")
+```
+
+```{r}
+library("precrec")
+
+# cross validation
+res <- benchmark(data.table(
+  task       = list(heartfailure_task),
+  learner    = list(lrn_log_reg,
+                    lrn_cart),
+  resampling = list(cv)
+), store_models = TRUE)
+
+autoplot(res$clone(deep = TRUE), type = "roc")
+```
+
+## Model Improvements
+
+Use feature selection wrappers
+
+```{r}
+library("mlr3fselect")
+
+set.seed(500)
+instance <- fselect(
+  method = "random_search",
+  task =  heartfailure_task,
+  learner = lrn("classif.log_reg"),
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("classif.ce"),
+  term_evals = 10,
+  batch_size = 5
+)
+instance$result
+```
+
+Build a new dataset without some irrelevant variables that we observed from data
+exploration and .
+
+```{r}
+re_heart.failure <- heart.failure %>% 
+  select(-creatinine_phosphokinase, -platelets)
+```
+
+Make a new heart failure task (without some irrelevant variables).
+
+```{r}
+set.seed(500) 
+re_heartfailure_task <- TaskClassif$new(id = "ReHeartFailure",
+                                  backend = re_heart.failure,
+                                  target = "fatal_mi",
+                                  positive = "1")
+```
+
+Set several options for good error estimation.
+
+```{r}
+re_holdout <- rsmp("holdout", ratio = 0.7)
+re_holdout$instantiate(re_heartfailure_task)
+
+re_cv <- rsmp("cv", folds = 5)
+re_cv$instantiate(re_heartfailure_task)
+
+re_bootstrap <- rsmp("bootstrap")
+re_bootstrap$instantiate(re_heartfailure_task)
+```
+
+Set the benchmarks and show the results of measurements.
+
+```{r}
+res <- benchmark(data.table(
+  task       = list(re_heartfailure_task),
+  learner    = list(lrn_log_reg,
+                    lrn_cart),
+  resampling = list(re_cv)
+), store_models = TRUE)
+
+res$aggregate(measures)
+autoplot(res)
+autoplot(res$clone(deep = TRUE), type = "roc")
+
+res <- benchmark(data.table(
+  task       = list(re_heartfailure_task),
+  learner    = list(lrn_log_reg,
+                    lrn_cart),
+  resampling = list(re_bootstrap)
+), store_models = TRUE)
+
+res$aggregate(measures)
+autoplot(res)
+autoplot(res$clone(deep = TRUE), type = "roc")
+```
+
+Examine in depth the results in each fold of cross validation.
+
+```{r}
+plot(res$resample_result(2)$learners[[1]]$model, compress = TRUE, margin = 0.1)
+text(res$resample_result(2)$learners[[1]]$model, use.n = TRUE, cex = 0.8)
+
+plot(res$resample_result(2)$learners[[2]]$model, compress = TRUE, margin = 0.1)
+text(res$resample_result(2)$learners[[2]]$model, use.n = TRUE, cex = 0.8)
+
+plot(res$resample_result(2)$learners[[3]]$model, compress = TRUE, margin = 0.1)
+text(res$resample_result(2)$learners[[3]]$model, use.n = TRUE, cex = 0.8)
+
+plot(res$resample_result(2)$learners[[4]]$model, compress = TRUE, margin = 0.1)
+text(res$resample_result(2)$learners[[4]]$model, use.n = TRUE, cex = 0.8)
+
+plot(res$resample_result(2)$learners[[5]]$model, compress = TRUE, margin = 0.1)
+text(res$resample_result(2)$learners[[5]]$model, use.n = TRUE, cex = 0.8)
+```
+
+Make a selection for the cost penalty to prune the trees.
+
+```{r}
+lrn_cart_cv <- lrn("classif.rpart", predict_type = "prob", xval = 10)
+
+res_cart_cv <- resample(re_heartfailure_task, lrn_cart_cv, re_cv, store_models = TRUE)
+rpart::plotcp(res_cart_cv$learners[[1]]$model)
+rpart::plotcp(res_cart_cv$learners[[2]]$model)
+rpart::plotcp(res_cart_cv$learners[[3]]$model)
+rpart::plotcp(res_cart_cv$learners[[4]]$model)
+rpart::plotcp(res_cart_cv$learners[[5]]$model)
+```
+
+Set the benchmarks and show the results of measurements.
+
+```{r}
+lrn_cart_cp <- lrn("classif.rpart", predict_type = "prob", cp = 0.15)
+
+res <- benchmark(data.table(
+  task       = list(re_heartfailure_task),
+  learner    = list(lrn_log_reg,
+                    lrn_cart_cp),
+  resampling = list(re_cv)
+), store_models = TRUE)
+
+res$aggregate(measures)
+autoplot(res)
+autoplot(res$clone(deep = TRUE), type = "roc")
+autoplot(res, type = "prc")
+```
+
+## Performance Report
+
+Create some performance plots.
+
+```{r}
+library("precrec")
+
+res <- benchmark(data.table(
+  task       = list(re_heartfailure_task),
+  learner    = list(lrn_log_reg),
+  resampling = list(re_cv)
+), store_models = TRUE)
+
+autoplot(res)
+autoplot(res$clone(deep = TRUE), type = "roc")
+autoplot(res, type = "prc")
+
+library(cvms)
+library(tibble)
+
+measures_cm <- list(msr("classif.tp"),
+                    msr("classif.fp"), 
+                    msr("classif.fn"),
+                    msr("classif.tn"))
+
+cfm_data <- res$aggregate(measures_cm)
+
+tp <- as.integer(cfm_data[1,7] / sum(cfm_data[1,7:10]) * dim(re_heart.failure)[1])
+fp <- as.integer(cfm_data[1,8] / sum(cfm_data[1,7:10]) * dim(re_heart.failure)[1])
+fn <- as.integer(cfm_data[1,9] / sum(cfm_data[1,7:10]) * dim(re_heart.failure)[1])
+tn <- as.integer(cfm_data[1,10] / sum(cfm_data[1,7:10]) * dim(re_heart.failure)[1])
+
+cfm_table <- matrix(c(tn, fp, fn, tp), ncol=2, byrow=TRUE)
+colnames(cfm_table) <- c("0","1")
+rownames(cfm_table) <- c("0","1")
+names(dimnames(cfm_table)) <- c("target", "prediction")
+cfm_table <- as.table(cfm_table)
+cfm_table
+cfm <- as_tibble(cfm_table)
+plot_confusion_matrix(cfm, 
+                      target_col = "target", 
+                      prediction_col = "prediction",
+                      counts_col = "n")
+```

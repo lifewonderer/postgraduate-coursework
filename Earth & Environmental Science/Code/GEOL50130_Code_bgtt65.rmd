@@ -1,0 +1,1023 @@
+---
+title: "GEOL50130 - Mini Project"
+author: "bgtt65"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+# Part 1: Data Exploration
+
+Load the Durham temperature data first and take a look at the head and check for 
+null values. The year, month and day variables are in numeric, then we convert 
+numeric to factor.  
+
+```{r}
+library(tidyverse)
+
+# Load data and omit null values
+durhamTemp <- readr::read_csv("durhamtemp_1901_2019.csv")
+head(durhamTemp)
+durhamTemp <- na.omit(durhamTemp)
+
+# Convert numeric to factor
+durhamTemp$Year <- as.factor(durhamTemp$Year)
+durhamTemp$Month <- as.factor(durhamTemp$Month)
+durhamTemp$Day <- as.factor(durhamTemp$Day)
+```
+
+Show the summary of the Durham temperature data. Now we briefly understand the 
+distribution of temperature and PPT and the counts of date variables.
+
+```{r}
+# Review the data
+skimr::skim(durhamTemp)
+```
+
+```{r}
+library(ggplot2)
+
+# Plot the histograms for temperature and PPT
+DataExplorer::plot_histogram(durhamTemp$`Av temp`, ncol = 2, ggtheme = theme_linedraw())
+```
+
+```{r}
+# Plot the Q-Q plots for temperature and PPT
+DataExplorer::plot_qq(durhamTemp$`Av temp`, ncol = 2, ggtheme = theme_linedraw())
+```
+
+```{r}
+library(oce)
+library(dplyr)
+
+# Filter the values of 29th Feb in every four years
+durhamTemp.fil <- filter(durhamTemp, Month!='2' | Day!='29')
+
+# Set the total number of days and years
+days = 1:365
+years = 1901:2019
+
+# Make a matrix, then plot a heatmap with contour
+durhamTemp.mat = matrix(durhamTemp.fil$`Av temp`, nrow = length(days)) 
+imagep(x = years, y = days, z = durhamTemp.mat %>% t(), filledContour = F, 
+       col = oceColors9A(120), ylim = c(365,0),
+       ylab = "Day", zlab = expression(Temperature~(degree *C)))
+contour(x = years, y = days, z = durhamTemp.mat %>% t(), add = TRUE, 
+        col = 1, nlevels = 3)
+```
+
+```{r}
+# Make the daily time series object and plot
+daily.ts = ts(data = durhamTemp$`Av temp`, start = c(1901,1,1), frequency = 365.24)
+plot(daily.ts, xlab = "Time", las = 1, ylab = expression(Temperature~(degree*C)),
+     main = "Durham Daily Tempterature Time Series")
+```
+
+Make the monthly average dataset and plot the monthly time series.
+
+```{r}
+library(lubridate)
+library(forecast)
+
+# Summarise the data to monthly average
+durhamTemp.monthly <- durhamTemp%>%
+  group_by(Year,Month)%>%
+  summarise(totalRain = sum(PPT.), meanAvtemp = mean(`Av temp`),
+            meanTmax = mean(Tmax), meanTmin = mean(Tmin))
+durhamTemp.monthly$Date <- paste("15/",durhamTemp.monthly$Month,"/",durhamTemp.monthly$Year)
+durhamTemp.monthly$Date <- dmy(durhamTemp.monthly$Date)
+
+# Make the monthly time series object and plot
+monthly.ts = ts(data = durhamTemp.monthly$meanAvtemp, start = c(1901,1), frequency = 12)
+plot(monthly.ts, xlab = "Time", las = 1, ylab = expression(Temperature~(degree*C)),
+     main = "Durham Monthly Tempterature Time Series")
+
+# Make a season plot
+ggseasonplot(monthly.ts, year.labels=TRUE, year.labels.left=TRUE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Durham Monthly Tempterature")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Make a subseries plot
+ggsubseriesplot(monthly.ts)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Durham Monthly Tempterature")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Part 2: Monthly Temperature Forecast 
+
+```{r}
+# Make training (80%) and test (20%) sets
+monthly.ts.train <- window(monthly.ts, start = c(1901,1), end = c(1995,12)) 
+monthly.ts.test <- window(monthly.ts, start = c(1996,1), end = c(2019,12)) 
+
+# Make cross-validation set
+monthly.ts.CV <- window(monthly.ts, start = c(2015,1), end = c(2019,12)) 
+```
+
+## 2.1 Basic Methods
+
+**Mean Method**
+
+```{r}
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.mean <- meanf(monthly.ts.train, h = 12 * 24)
+accuracyTT.mean <- accuracy(forecastTT.mean, monthly.ts.test)
+rmseTT.mean <- accuracy(forecastTT.mean, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.mean)
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+errorCV.mean <- tsCV(monthly.ts.CV, forecastfunction = meanf, h = 6)
+mseCV.mean <-colMeans(errorCV.mean^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.mean), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of Mean Method Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.mean <- sqrt(mean(mseCV.mean))
+```
+
+**Naïve Method**
+
+```{r}
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.naive <- naive(monthly.ts.train, h = 12 * 24)
+accuracyTT.naive <- accuracy(forecastTT.naive, monthly.ts.test)
+rmseTT.naive <- accuracy(forecastTT.naive, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.naive)
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+errorCV.naive <- tsCV(monthly.ts.CV, forecastfunction = rwf, h = 6)
+mseCV.naive <-colMeans(errorCV.naive^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.naive), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of Naïve Method Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.naive <- sqrt(mean(mseCV.naive))
+```
+
+**Seasonal Naïve Method**
+
+```{r}
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.snaive <- snaive(monthly.ts.train, h = 12 * 24)
+accuracyTT.snaive <- accuracy(forecastTT.snaive, monthly.ts.test)
+rmseTT.snaive <- accuracy(forecastTT.snaive, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.snaive)
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+errorCV.snaive <- tsCV(monthly.ts.CV, forecastfunction = snaive, h = 6)
+mseCV.snaive <-colMeans(errorCV.snaive^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.snaive), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of Snaïve Method Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.snaive <- sqrt(mean(mseCV.snaive))
+```
+
+**Draft Method**
+
+```{r}
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.draft <- rwf(monthly.ts.train, h = 12 * 24, drift = TRUE, na.rm=TRUE)
+accuracyTT.draft <- accuracy(forecastTT.draft, monthly.ts.test)
+rmseTT.draft <- accuracy(forecastTT.draft, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.draft)
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+errorCV.draft <- tsCV(monthly.ts.CV, forecastfunction = rwf, drift = TRUE, h = 6)
+mseCV.draft <-colMeans(errorCV.draft^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.draft), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of Draft Method Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.draft <- sqrt(mean(mseCV.draft))
+```
+
+**Bsics Methods Comparison**
+
+After the comparison with four basic methods, the seasonal naïve shows a good
+performance. This method is chosen as the best basic model to set a baseline
+for other following models.
+
+```{r}
+## Strategy 1: Training and test sets
+# show accuracy results for these basic methods
+accuracyTT.basic <- as.data.frame(rbind(accuracyTT.mean, accuracyTT.naive,
+                                        accuracyTT.snaive, accuracyTT.draft))
+rownames(accuracyTT.basic) <- c("Mean Training", "Mean Test", "Naïve Training", "Naïve Test",
+                                "Snaïve Training", "Snaïve Test", "Draft Training", "Draft Test")
+accuracyTT.basic 
+
+# plot forecast results for these basic methods
+autoplot(monthly.ts)+
+  autolayer(forecastTT.snaive, series = "Saïve", PI = FALSE)+
+  autolayer(forecastTT.mean, series = "Mean", PI = FALSE)+
+  autolayer(forecastTT.naive, series = "Naïve", PI = FALSE)+
+  autolayer(forecastTT.draft, series = "Draft", PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Basic Methods Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))+
+  guides(colour = guide_legend(title = "Method"))+
+  scale_color_manual(values = c("#ef1828", "#3f60aa", "#f46f20", "#9ec417"))
+
+## Strategy 2: Time series cross-validation
+# plot accuracy results for these basic methods
+mseCV.basic <- data.frame(h = 1:6, mseCV.mean = mseCV.mean, mseCV.naive = mseCV.naive,
+                          mseCV.snaive = mseCV.snaive, mseCV.draft = mseCV.draft)
+ggplot(mseCV.basic)+
+  geom_point(aes(x = h, y = mseCV.mean, colour = "Mean"), size=2)+
+  geom_point(aes(x = h, y = mseCV.naive, colour = "Naïve"), size=2)+
+  geom_point(aes(x = h, y = mseCV.snaive, colour = "Snaïve"), size=2)+
+  geom_point(aes(x = h, y = mseCV.draft, colour = "Draft"), size=2)+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of Basic Methods Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))+
+  guides(colour = guide_legend(title = "Method"))+
+  scale_color_manual(values = c("#ef1828", "#3f60aa", "#f46f20", "#9ec417"))
+
+# show accuracy results for these basic methods
+accuracyCV.basic <- as.data.frame(rbind(rmseCV.mean, rmseCV.naive,
+                                        rmseCV.snaive, rmseCV.draft))
+colnames(accuracyCV.basic) <- c("RMSE")
+rownames(accuracyCV.basic) <- c("Mean", "Naïve", "Snaïve", "Draft")
+accuracyCV.basic 
+```
+
+## 2.2 Linear Regression Model
+
+```{r}
+library('fpp')
+
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+fitTT.tslm <- tslm(monthly.ts.train ~ trend + season)
+forecastTT.tslm <- forecast(fitTT.tslm, h = 12 * 24)
+accuracyTT.tslm <- accuracy(forecastTT.tslm, monthly.ts.test)
+rmseTT.tslm <- accuracy(forecastTT.tslm, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.tslm)
+
+# plot forecast results for linear regression model
+autoplot(monthly.ts)+
+  autolayer(forecastTT.tslm, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Linear Regression Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+tslm_function <- function(data, h) {
+  fitmodel <- tslm(data ~ trend + season)
+  forecast(fitmodel, h = h)
+}
+errorCV.tslm <- tsCV(monthly.ts.CV, tslm_function, h = 6)
+mseCV.tslm <-colMeans(errorCV.tslm^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.tslm), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of Linear Regression Model Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.tslm <- sqrt(mean(mseCV.tslm))
+```
+
+## 2.3 Exponential Smoothing
+
+**ETS (Error, Trend, Seasonal) Model**
+
+```{r}
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+fitTT.ets <- ets(monthly.ts.train)
+forecastTT.ets <- forecast(fitTT.ets, h = 12 * 24)
+accuracyTT.ets <- accuracy(forecastTT.ets, monthly.ts.test)
+rmseTT.ets <- accuracy(forecastTT.ets, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.ets)
+
+# plot forecast results for ETS model
+autoplot(monthly.ts)+
+  autolayer(forecastTT.ets, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("ETS(A,N,A) Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+ets_function <- function(data, h) {
+  fitmodel <- ets(data)
+  forecast(fitmodel, h = h)
+}
+errorCV.ets <- tsCV(monthly.ts.CV, ets_function, h = 6)
+mseCV.ets <-colMeans(errorCV.ets^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.ets), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of ETS Model Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.ets <- sqrt(mean(mseCV.ets))
+```
+
+## 2.4 ARIMA Model
+
+```{r}
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+fitTT.arima <- auto.arima(monthly.ts.train)
+forecastTT.arima <- forecast(fitTT.arima, h = 12 * 24)
+accuracyTT.arima <- accuracy(forecastTT.arima, monthly.ts.test)
+rmseTT.arima <- accuracy(forecastTT.arima, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.arima)
+
+# plot forecast results for ARIMA model
+autoplot(monthly.ts)+
+  autolayer(forecastTT.arima, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("ARIMA(1,0,0)(2,1,0) Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+arima_function <- function(data, h) {
+  fitmodel <- auto.arima(data)
+  forecast(fitmodel, h = h)
+}
+errorCV.arima <- tsCV(monthly.ts.CV, arima_function, h = 6)
+mseCV.arima <-colMeans(errorCV.arima^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.arima), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of ARIMA Model Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.arima <- sqrt(mean(mseCV.arima))
+```
+
+## 2.5 Decomposition
+
+**STL + ETS Model**
+
+```{r}
+library(fpp2)
+
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.stle <- stlf(monthly.ts.train, h = 12 * 24, method = "ets")
+accuracyTT.stle <- accuracy(forecastTT.stle, monthly.ts.test)
+rmseTT.stle <- accuracy(forecastTT.stle, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.stle)
+
+# plot forecast results for STL model
+autoplot(monthly.ts)+
+  autolayer(forecastTT.stle, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("STL + ETS(A,N,N) Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+stle_function <- function(data, h) {
+  stlf(data, h = h, method = "ets")
+}
+errorCV.stle <- tsCV(monthly.ts.CV, stle_function, h = 6)
+mseCV.stle <-colMeans(errorCV.stle^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.stle), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of STL + ETS Model Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.stle <- sqrt(mean(mseCV.stle))
+```
+
+**STL + ARIMA Model**
+
+```{r}
+library(fpp2)
+
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.stla <- stlf(monthly.ts.train, h = 12 * 24, method = "arima")
+accuracyTT.stla <- accuracy(forecastTT.stla, monthly.ts.test)
+rmseTT.stla <- accuracy(forecastTT.stla, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.stla)
+
+# plot forecast results for STL model
+autoplot(monthly.ts)+
+  autolayer(forecastTT.stla, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("STL + ARIMA(1,1,2) Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+stla_function <- function(data, h) {
+  stlf(data, h = h, method = "arima")
+}
+errorCV.stla <- tsCV(monthly.ts.CV, stla_function, h = 6)
+mseCV.stla <-colMeans(errorCV.stla^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.stla), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of STL + ARIMA Model Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.stla <- sqrt(mean(mseCV.stla))
+```
+
+## 2.6 Neural Network Model
+
+```{r}
+## Strategy 1: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+set.seed(2022)
+fitTT.nnetar <- nnetar(monthly.ts.train)
+forecastTT.nnetar <- forecast(fitTT.nnetar,h = 12 * 24)
+accuracyTT.nnetar <- accuracy(forecastTT.nnetar, monthly.ts.test)
+rmseTT.nnetar <- accuracy(forecastTT.nnetar, monthly.ts.test)[2,2]
+checkresiduals(forecastTT.nnetar)
+
+# plot forecast results for NN model
+autoplot(monthly.ts)+
+  autolayer(forecastTT.nnetar, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Neural Network Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+
+## Strategy 2: Time series cross-validation
+# forecast the value of test set temperature and compute the accuracy(RMSE)
+nnetar_function <- function(data, h) {
+  set.seed(2022)
+  fitmodel <- nnetar(data)
+  forecast(fitmodel, h = h)
+}
+errorCV.nnetar <- tsCV(monthly.ts.CV, nnetar_function, h = 6)
+mseCV.nnetar <-colMeans(errorCV.nnetar^2, na.rm = T)
+ggplot(data.frame(h = 1:6, MSE = mseCV.nnetar), aes(x = h, y = MSE))+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of Neural Network Model Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+rmseCV.nnetar <- sqrt(mean(mseCV.nnetar))
+```
+
+## 2.7 Model Comparison
+
+```{r}
+## Strategy 1: Training and test sets
+# show accuracy results for all comparison models
+accuracyTT.all <- as.data.frame(rbind(accuracyTT.snaive, accuracyTT.tslm, 
+                                      accuracyTT.ets, accuracyTT.arima,
+                                      accuracyTT.stle, accuracyTT.stla,
+                                      accuracyTT.nnetar))
+rownames(accuracyTT.all) <- c("Snaïve Training", "Snaïve Test", "LR Training", "LR Test",
+                              "ETS Training", "ETS Test", "ARIMA Training", "ARIMA Test",
+                              "STL+ETS Training", "STL+ETS Test", "STL+ARIMA Training", "STL+ARIMA Test", 
+                              "NN Training", "NN Test")
+accuracyTT.all 
+
+# plot forecast results for all comparison models
+plotTT.snaive <- autoplot(forecastTT.snaive) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.tslm <- autoplot(forecastTT.tslm) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.ets <- autoplot(forecastTT.ets) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.stle <- autoplot(forecastTT.stle) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.stla <- autoplot(forecastTT.stla) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.arima <- autoplot(forecastTT.arima) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.nnetar <- autoplot(forecastTT.nnetar) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+gridExtra::grid.arrange(plotTT.snaive, plotTT.tslm, plotTT.ets, nrow = 3)
+gridExtra::grid.arrange(plotTT.arima, plotTT.stle, plotTT.stla, nrow = 3)
+gridExtra::grid.arrange(plotTT.nnetar, nrow = 3)
+
+## Strategy 2: Time series cross-validation
+# plot accuracy results for all comparison models
+mseCV.all <- data.frame(h = 1:6, mseCV.snaive = mseCV.snaive, mseCV.tslm = mseCV.tslm,
+                        mseCV.ets = mseCV.ets, mseCV.arima = mseCV.arima,
+                        mseCV.stle = mseCV.stle, mseCV.stla = mseCV.stla,
+                        mseCV.nnetar)
+ggplot(mseCV.basic)+
+  geom_point(aes(x = h, y = mseCV.snaive, colour = "Snaïve"), size = 2)+
+  geom_point(aes(x = h, y = mseCV.tslm, colour = "LR"), size = 2)+
+  geom_point(aes(x = h, y = mseCV.ets, colour = "ETS"), size = 2)+
+  geom_point(aes(x = h, y = mseCV.arima, colour = "ARIMA"), size = 2)+
+  geom_point(aes(x = h, y = mseCV.stle, colour = "STL+ETS"), size = 2)+
+  geom_point(aes(x = h, y = mseCV.stla, colour = "STL+ARIMA"), size = 2)+
+  geom_point(aes(x = h, y = mseCV.nnetar, colour = "NN"), size = 2)+
+  scale_x_continuous(breaks = seq(1, 6))+
+  xlab("Number of periods")+
+  ylab("MSE")+
+  ggtitle("MSE of Basic Methods Using Cross-vaildation")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))+
+  guides(colour = guide_legend(title = "Method"))+
+  scale_color_manual(values = c("#ef1828", "#3f60aa", "#f46f20", "#9ec417", "gray", "gold", "purple"))
+
+# show accuracy results for all comparison models
+accuracyCV.all <- as.data.frame(rbind(rmseCV.snaive, rmseCV.tslm, rmseCV.ets, rmseCV.arima,
+                                      rmseCV.stle, rmseCV.stla, rmseCV.nnetar))
+colnames(accuracyCV.all) <- c("RMSE")
+rownames(accuracyCV.all) <- c("Snaïve", "LR", "ETS", "ARIMA", "STL+ETS", "STL+ARIMA", "NN")
+accuracyCV.all
+```
+
+## 2.8 Prediction
+
+The STL + ETS model is the best model after comparison, then use this model to 
+make a 2020 monthly temperature prediction.
+
+```{r}
+# forecast the value of 2020 temperature
+forecastTT.stl.2020 <- stlf(monthly.ts.train, h = 12 * 25, method = "ets")
+prediction.stl.test <- window(forecastTT.stl.2020$mean, start = c(1996,1), end = c(2019,12)) 
+prediction.stl.2020 <- window(forecastTT.stl.2020$mean, start = c(2020,1), end = c(2020,12)) 
+
+# plot forecast results for the best model
+autoplot(monthly.ts)+
+  autolayer(prediction.stl.test, series = "Test Set")+
+  autolayer(prediction.stl.2020, series = "2020")+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Temperature Forecast Using STL + ETS Model")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+  guides(colour = guide_legend(title = "Forecast"))
+  
+# plot 2020 forecast for the best model
+autoplot(prediction.stl.2020)+
+  scale_x_yearmon(format = "%b", n = 15)+
+  geom_point(size = 3)+
+  geom_text(aes(label = round(prediction.stl.2020, 1)),
+            vjust = 0.5, hjust = -0.3)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("2020 Temperature Forecast Using STL + ETS Model")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Part 3: Daily Temperature Forecast 
+
+```{r}
+# Make training (80%) and test (20%) sets
+daily.ts.sets <- window(daily.ts, start = c(2010,1), end = c(2019,366)) 
+daily.ts.train <- window(daily.ts, start = c(2010,1), end = c(2017,366)) 
+daily.ts.test <- window(daily.ts, start = c(2018,1), end = c(2019,366)) 
+```
+
+## 3.1 Basic Methods
+
+**Mean Method**
+
+```{r}
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.mean <- meanf(daily.ts.train, h = 2 * 365.24)
+accuracyTT.mean <- accuracy(forecastTT.mean, daily.ts.test)
+rmseTT.mean <- accuracy(forecastTT.mean, daily.ts.test)[2,2]
+checkresiduals(forecastTT.mean)
+```
+
+**Naive Method**
+
+```{r}
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.naive <- naive(daily.ts.train, h = 2 * 365.24)
+accuracyTT.naive <- accuracy(forecastTT.naive, daily.ts.test)
+rmseTT.naive <- accuracy(forecastTT.naive, daily.ts.test)[2,2]
+checkresiduals(forecastTT.naive)
+```
+
+**Seasonal Naive Method**
+
+```{r}
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.snaive <- snaive(daily.ts.train, h = 2 * 365.24)
+accuracyTT.snaive <- accuracy(forecastTT.snaive, daily.ts.test)
+rmseTT.snaive <- accuracy(forecastTT.snaive, daily.ts.test)[2,2]
+checkresiduals(forecastTT.snaive)
+```
+
+**Draft Method**
+
+```{r}
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.draft <- rwf(daily.ts.train, h = 2 * 365.24, drift = TRUE, na.rm=TRUE)
+accuracyTT.draft <- accuracy(forecastTT.draft, daily.ts.test)
+rmseTT.draft <- accuracy(forecastTT.draft, daily.ts.test)[2,2]
+checkresiduals(forecastTT.draft)
+```
+
+**Bsics Methods Comparison**
+
+Same as the monthly temperature forecast result, the seasonal naïve method is the 
+best basic model which is set as a baseline.
+
+```{r}
+## Strategy: Training and test sets
+# show accuracy results for these basic methods
+accuracyTT.basic <- as.data.frame(rbind(accuracyTT.mean, accuracyTT.naive,
+                                        accuracyTT.snaive, accuracyTT.draft))
+rownames(accuracyTT.basic) <- c("Mean Training", "Mean Test", "Naïve Training", "Naïve Test",
+                                "Snaïve Training", "Snaïve Test", "Draft Training", "Draft Test")
+accuracyTT.basic 
+
+# plot forecast results for these basic methods
+autoplot(daily.ts.sets)+
+  autolayer(forecastTT.snaive, series = "Saïve", PI = FALSE)+
+  autolayer(forecastTT.mean, series = "Mean", PI = FALSE)+
+  autolayer(forecastTT.naive, series = "Naïve", PI = FALSE)+
+  autolayer(forecastTT.draft, series = "Draft", PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Basic Methods Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))+
+  guides(colour = guide_legend(title = "Method"))+
+  scale_color_manual(values = c("#ef1828", "#3f60aa", "#f46f20", "#9ec417"))
+```
+
+## 3.2 Linear Regression Model (Has problem)
+
+```{r}
+library('fpp')
+
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+fitTT.tslm <- tslm(daily.ts.train ~ trend + season)
+forecastTT.tslm <- forecast(fitTT.tslm, h = 2 * 365.24)
+accuracyTT.tslm <- accuracy(forecastTT.tslm, daily.ts.test)
+rmseTT.tslm <- accuracy(forecastTT.tslm, daily.ts.test)[2,2]
+checkresiduals(forecastTT.tslm)
+
+# plot forecast results for linear regression model
+autoplot(daily.ts.sets)+
+  autolayer(forecastTT.tslm, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Linear Regression Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## 3.3 Exponential Smoothing (Has problem)
+
+**ETS (Error, Trend, Seasonal) Model**
+
+```{r}
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+fitTT.ets <- ets(daily.ts.train)
+forecastTT.ets <- forecast(fitTT.ets, h = 2 * 365.24)
+accuracyTT.ets <- accuracy(forecastTT.ets, daily.ts.test)
+rmseTT.ets <- accuracy(forecastTT.ets, daily.ts.test)[2,2]
+checkresiduals(forecastTT.ets)
+
+# plot forecast results for ETS model
+autoplot(daily.ts.sets)+
+  autolayer(forecastTT.ets, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("ETS(A,N,N) Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## 3.4 ARIMA Model (Really slow)
+
+```{r}
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+fitTT.arima <- auto.arima(daily.ts.train)
+forecastTT.arima <- forecast(fitTT.arima, h = 2 * 365.24)
+accuracyTT.arima <- accuracy(forecastTT.arima, daily.ts.test)
+rmseTT.arima <- accuracy(forecastTT.arima, daily.ts.test)[2,2]
+checkresiduals(forecastTT.arima)
+
+# plot forecast results for ARIMA model
+autoplot(daily.ts.sets)+
+  autolayer(forecastTT.arima, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("ARIMA(3,0,1)(0,1,0) Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## 3.5 Decomposition
+
+**STL + ETS Model**
+
+```{r}
+library(fpp2)
+
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.stle <- stlf(daily.ts.train, h = 2 * 365.24, method = "ets")
+accuracyTT.stle <- accuracy(forecastTT.stle, daily.ts.test)
+rmseTT.stle <- accuracy(forecastTT.stle, daily.ts.test)[2,2]
+checkresiduals(forecastTT.stle)
+
+# plot forecast results for STL model
+autoplot(daily.ts.sets)+
+  autolayer(forecastTT.stle, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("STL + ETS(A,N,N) Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+**STL + ARIMA Model**
+
+```{r}
+library(fpp2)
+
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.stla <- stlf(daily.ts.train, h = 2 * 365.24, method = "arima")
+accuracyTT.stla <- accuracy(forecastTT.stla, daily.ts.test)
+rmseTT.stla <- accuracy(forecastTT.stla, daily.ts.test)[2,2]
+checkresiduals(forecastTT.stla)
+
+# plot forecast results for STL model
+autoplot(daily.ts.sets)+
+  autolayer(forecastTT.stla, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("STL + ARIMA(1,1,3) Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## 3.6 Neural Network Model (Has problem)
+
+```{r}
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+set.seed(2022)
+fitTT.nnetar <- nnetar(daily.ts.train)
+forecastTT.nnetar <- forecast(fitTT.nnetar,h = 2 * 365.24)
+accuracyTT.nnetar <- accuracy(forecastTT.nnetar, daily.ts.test)
+rmseTT.nnetar <- accuracy(forecastTT.nnetar, daily.ts.test)[2,2]
+checkresiduals(forecastTT.nnetar)
+
+# plot forecast results for NN model
+autoplot(daily.ts.sets)+
+  autolayer(forecastTT.nnetar, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Neural Network Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## 3.7 Model Comparison
+
+```{r}
+## Strategy: Training and test sets
+# show accuracy results for all comparison models
+accuracyTT.all <- as.data.frame(rbind(accuracyTT.snaive, accuracyTT.tslm, 
+                                      accuracyTT.ets, accuracyTT.arima,
+                                      accuracyTT.stle, accuracyTT.stla,
+                                      accuracyTT.nnetar))
+rownames(accuracyTT.all) <- c("Snaïve Training", "Snaïve Test", "LR Training", "LR Test",
+                              "ETS Training", "ETS Test", "ARIMA Training", "ARIMA Test",
+                              "STL+ETS Training", "STL+ETS Test", "STL+ARIMA Training", "STL+ARIMA Test", 
+                              "NN Training", "NN Test")
+accuracyTT.all 
+
+# plot forecast results for all comparison models
+plotTT.snaive <- autoplot(forecastTT.snaive) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.tslm <- autoplot(forecastTT.tslm) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.ets <- autoplot(forecastTT.ets) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.stle <- autoplot(forecastTT.stle) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.stla <- autoplot(forecastTT.stla) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.arima <- autoplot(forecastTT.arima) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.nnetar <- autoplot(forecastTT.nnetar) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+gridExtra::grid.arrange(plotTT.snaive, plotTT.arima, plotTT.stle, nrow = 3)
+gridExtra::grid.arrange(plotTT.stla, nrow = 3)
+```
+
+## 3.8 Model Refitting
+
+```{r}
+# Make training (80%) and test (20%) sets
+daily.ts.train <- window(daily.ts, start = c(1901,1), end = c(1995,366)) 
+daily.ts.test <- window(daily.ts, start = c(1996,1), end = c(2019,366)) 
+```
+
+**Seasonal Naive Method**
+
+```{r}
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.snaive <- snaive(daily.ts.train, h = 24 * 365.24)
+accuracyTT.snaive <- accuracy(forecastTT.snaive, daily.ts.test)
+rmseTT.snaive <- accuracy(forecastTT.snaive, daily.ts.test)[2,2]
+checkresiduals(forecastTT.snaive)
+
+# plot forecast results for Seasonal naive
+autoplot(daily.ts)+
+  autolayer(forecastTT.snaive, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Seasonal Naive Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+**STL + ARIMA Model**
+
+```{r}
+library(fpp2)
+
+## Strategy: Training and test sets
+# forecast the value of test set temperature and compute the accuracy
+forecastTT.stl <- stlf(daily.ts.train, h = 24 * 365.24, method = "arima")
+accuracyTT.stl <- accuracy(forecastTT.stl, daily.ts.test)
+rmseTT.stl <- accuracy(forecastTT.stl, daily.ts.test)[2,2]
+checkresiduals(forecastTT.stl)
+
+# plot forecast results for STL model
+autoplot(daily.ts)+
+  autolayer(forecastTT.stl, PI = FALSE)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("STL + ETS(A,N,N) Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+**Comparison**
+
+```{r}
+## Strategy: Training and test sets
+# show accuracy results for all comparison models
+accuracyTT.all <- as.data.frame(rbind(accuracyTT.snaive, accuracyTT.stl))
+rownames(accuracyTT.all) <- c("Snaïve Training", "Snaïve Test", "STL+ARIMA Training", "STL+ARIMA Test")
+accuracyTT.all 
+
+# plot forecast results for all comparison models
+plotTT.snaive <- autoplot(forecastTT.snaive) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+plotTT.stl <- autoplot(forecastTT.stl) + ylab(expression(Temperature~(degree*C))) + theme_bw()
+gridExtra::grid.arrange(plotTT.snaive, plotTT.stl, nrow = 3)
+```
+
+## 3.9 Prediction
+
+After the accuracy comparison, the STL + ARIMA model is chosen to make a 2020 daily 
+temperature prediction.
+
+```{r}
+# forecast the value of 2020 temperature
+forecastTT.stl.2020 <- stlf(daily.ts.train, h = 25 * 366, method = "arima")
+prediction.stl.test <- window(forecastTT.stl.2020$mean, start = c(1996,1), end = c(2019,366)) 
+prediction.stl.2020 <- window(forecastTT.stl.2020$mean, start = c(2020,1), end = c(2020,367)) 
+prediction.stl.2020
+
+# plot forecast results for the chosen model
+autoplot(daily.ts)+
+  autolayer(prediction.stl.test, series = "Test Set")+
+  autolayer(prediction.stl.2020, series = "2020")+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Temperature Forecast Using STL + ARIMA Model")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+  guides(colour = guide_legend(title = "Forecast"))
+  
+# plot 2020 forecast for the chosen model
+autoplot(prediction.stl.2020)+
+  scale_x_yearmon(format = "%b", n = 16)+
+  geom_point(size = 1)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("2020 Temperature Forecast Using STL + ARIMA Model")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# 3.10 Searching New method
+
+**Prophet Model**
+
+```{r}
+library(prophet)
+
+## Strategy: Training and test sets
+# forecast the value of test set temperature
+date <- as.character(dmy(durhamTemp$Date))
+daily.ts.train.pro <- data.frame(cbind(date, durhamTemp$`Av temp`))[1:34698,]
+names(daily.ts.train.pro) <- c('ds', 'y')
+fitTT.pro <- prophet(daily.ts.train.pro)
+future <- make_future_dataframe(fitTT.pro, periods = 8766)
+forecastTT.pro <- predict(fitTT.pro, future)
+
+# compute the accuracy
+prediction.train <- forecastTT.pro['yhat'][1:34699,]
+real.train <- durhamTemp$`Av temp`[1:34699]
+rmseTT.pro.train <- sqrt(mean((real.train - prediction.train)^2))
+rmseTT.pro.train
+prediction.test <- forecastTT.pro['yhat'][34699:dim(forecastTT.pro)[1],]
+real.test <- durhamTemp$`Av temp`[34699:dim(durhamTemp)[1]]
+rmseTT.pro.test <- sqrt(mean((real.test - prediction.test)^2))
+rmseTT.pro.test
+
+# plot forecast results for Prophet model
+plot(fitTT.pro, forecastTT.pro)+
+  xlab("Time")+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("Prophet Model Forecast Using Training/Test Split")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+# forecast the value of 2020 temperature
+date <- as.character(dmy(durhamTemp$Date))
+future <- make_future_dataframe(fitTT.pro, periods = 9132)
+forecastTT.pro.2020 <- predict(fitTT.pro, future)
+prediction.pro.2020 <- forecastTT.pro.2020['yhat'][(dim(forecastTT.pro.2020)[1]-365):dim(forecastTT.pro.2020)[1],]
+prediction.pro.2020 = ts(data = prediction.pro.2020, start = c(2020,1,1), frequency = 366)
+
+# plot 2020 forecast for the chosen model
+autoplot(prediction.pro.2020)+
+  scale_x_yearmon(format = "%b", n = 16)+
+  geom_point(size = 1)+
+  ylab(expression(Temperature~(degree*C)))+
+  ggtitle("2020 Temperature Forecast Using Prophet Model")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))
+```
